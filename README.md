@@ -1,2 +1,2 @@
-# realtime-data-processing-pipeline
-Realtime data processing pipeline
+# Realtime Processing Pipeline using Golang
+Realtime data processing pipeline built using Golang
