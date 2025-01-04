@@ -91,23 +91,6 @@ services:
       SERVER_NAME: kibana.example.org
       ELASTICSEARCH_HOSTS: '["http://elastic:9200"]'
 
-  # logstash:
-  #   image: docker.elastic.co/logstash/logstash:8.15.5
-  #   container_name: logstash
-  #   volumes:
-  #     - $PWD/logstash/pipeline:/usr/share/logstash/pipeline
-  #   ports:
-  #     - "5003:5003"
-  #     - "9600:9600"
-  #   depends_on:
-  #     - elasticsearch
-  #     - kibana
-  #   environment:
-  #     #  - xpack.monitoring.enabled=false
-  #     #  - ELASTIC_USER=elastic
-  #     #  - ELASTIC_PASSWORD=${ELASTIC_PASSWORD}
-  #     ELASTIC_HOSTS: '["http://elastic:9200"]'
-
   kafka-ui-s:
     container_name: kafka-ui
     image: provectuslabs/kafka-ui:latest
