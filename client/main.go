@@ -420,7 +420,7 @@ func main() {
 	flag.Parse()
 	fmt.Println("Working with: ", *numbPtr)
 
-	time.Sleep(15 * time.Second)
+	time.Sleep(10 * time.Second)
 	generateTransactions(*numbPtr)
 	// ORIGIANL
 	// url := "http://localhost:5601/api/saved_objects/_import?createNewCopies=false"
