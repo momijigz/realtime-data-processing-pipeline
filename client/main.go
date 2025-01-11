@@ -15,17 +15,9 @@ import (
 	"path/filepath"
 	"time"
 
-	"github.com/briandowns/spinner"
 	"github.com/brianvoe/gofakeit/v6"
 	"github.com/confluentinc/confluent-kafka-go/kafka"
 )
-
-// var Red = "\033[31m"
-// var Green = "\033[32m"
-// var Reset = "\033[0m"
-
-// var Good = string(Green + "✔ " + Reset)
-// var Bad = Red + "✖ " + Reset
 
 // Structs
 type Person struct {
@@ -41,12 +33,12 @@ type Product struct {
 }
 
 type Transaction struct {
-	ID        string `json:"id"`
-	Timestamp int64  `json:"timestamp"`
-	Person    Person `json:"person"`
-	// SelectedProduct productsmodule.Product `json:"selectedProduct"`
+	ID              string  `json:"id"`
+	Timestamp       int64   `json:"timestamp"`
+	Person          Person  `json:"person"`
 	SelectedProduct Product `json:"selectedProduct"`
 	PaymentMethod   string  `json:"paymentMethod"`
+	NumberOfItems   int     `json:"numberOfItems"`
 }
 
 // ConnectorConfig represents the configuration for the connector
@@ -74,6 +66,10 @@ func (t *Transaction) SetUUID() {
 	paymentMethod := []string{"credit_card", "gift_card", "voucher", "cash_on_delivery"}
 	randomIndex := rand.Intn(len(paymentMethod))
 	t.PaymentMethod = paymentMethod[randomIndex]
+	min_x := 1
+	max_x := 10
+	t.NumberOfItems = rand.Intn(max_x-min_x+1) + min_x
+
 }
 
 func GetRandomProduct() Product {
@@ -127,8 +123,9 @@ func generateTransactions(numOfMessages int) {
 	// Define Kafka configuration
 	kafkaConfig := &kafka.ConfigMap{
 		"bootstrap.servers": "kafka:29092",
-		// "bootstrap.servers": "localhost:29092",
-
+		// "go.produce.channel.size":      10000,
+		// "queue.buffering.max.messages": 10000,
+		// "queue.buffering.max.kbytes":   4096,
 	}
 
 	// Create a new producer
@@ -148,12 +145,6 @@ func generateTransactions(numOfMessages int) {
 	startTime := time.Now()
 	throughputInterval := 1000 * time.Millisecond
 	var messageCount int64 = 0
-	// var maxThroughput float32 = 0
-
-	s := spinner.New(spinner.CharSets[14], 100*time.Millisecond) // Build our new spinner
-	s.Suffix = " "
-	s.Color("red")
-	s.Start() // Start the spinner
 
 	go func() {
 		for {
@@ -163,7 +154,6 @@ func generateTransactions(numOfMessages int) {
 			fmt.Printf("Throughput: %.2f messages/second\n", throughput)
 		}
 	}()
-	// finishChan <- startMsg{}
 
 	for i := 0; i < numOfMessages; i++ {
 		t.SetUUID()
@@ -171,32 +161,35 @@ func generateTransactions(numOfMessages int) {
 		t.SelectedProduct = GetRandomProduct()
 
 		// Serialize the struct to JSON
-		messageBytes, errorora := json.Marshal(t)
+		messageBytesT, error_json_t := json.Marshal(t)
 
-		if errorora != nil {
+		if error_json_t != nil {
 			panic(err)
 		}
 
 		err := producer.Produce(&kafka.Message{
 			TopicPartition: kafka.TopicPartition{Topic: &topic, Partition: kafka.PartitionAny},
-			Value:          []byte(messageBytes),
+			Value:          []byte(messageBytesT),
 		}, nil)
 
 		if err != nil {
-			fmt.Printf("Failed to produce message: %s\n", err)
+			fmt.Printf("Failed to produce Transaction: %s\n", err)
 		}
-		// fmt.Println(t)
+
 		messageCount++
-		time.Sleep(time.Microsecond * 1)
+		time.Sleep(time.Microsecond * 15)
+
 		// Wait for message deliveries
 
 		// Calculate throughput
 
 	}
+
+	producer.Flush(15 * 1000)
+	producer.Close()
 	endTime := time.Now()
 	duration := endTime.Sub(startTime)
 
-	s.Stop()
 	fmt.Printf("\nTime taken to send %d messages to Kafka: %v\n", numOfMessages, duration)
 }
 
