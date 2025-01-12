@@ -41,7 +41,7 @@ type Transaction struct {
 	NumberOfItems   int     `json:"numberOfItems"`
 }
 
-// ConnectorConfig represents the configuration for the connector
+// Connector Config represents the configuration for the connector
 type ConnectorConfig struct {
 	Name   string            `json:"name"`
 	Config map[string]string `json:"config"`
@@ -177,7 +177,7 @@ func generateTransactions(numOfMessages int) {
 		}
 
 		messageCount++
-		time.Sleep(time.Microsecond * 15)
+		time.Sleep(time.Microsecond * 10)
 
 		// Wait for message deliveries
 
@@ -326,20 +326,19 @@ func uploadFile(url string, headers map[string]string, paramName, path string) e
 
 func main() {
 
-	fmt.Print("****ECC Data Generation Client****\n\n")
-	// fmt.Println("Checking to see if the required containers are running...")
+	fmt.Print("****Ecommerce Data Generation Client****\n\n")
 
 	/*
 		Create Elasticsearch Connector
 	*/
-	fmt.Print("Checking kibana...\n")
+	fmt.Print("Checking [ Kibana ] for liveness...\n")
 
 	kibana_url := "http://kibana:5601"
 	req_k, err_k := http.NewRequest("GET", kibana_url, nil)
 	if err_k != nil {
-		log.Fatalf("Kibana is not running: %v", err_k)
+		log.Fatalf("[ Kibana ] is not running: %v", err_k)
 	} else {
-		fmt.Println("Kibana is running: ", req_k)
+		fmt.Println("[ Kibana ] is running: ", req_k)
 	}
 
 	url := "http://kibana:5601/api/saved_objects/_import?createNewCopies=false"
@@ -349,25 +348,21 @@ func main() {
 	paramName := "file"
 	path := "./exports.ndjson"
 
-	err2 := uploadFile(url, headers, paramName, path)
-	if err2 != nil {
-		log.Fatalf("Error uploading file in Kibana: %v", err2)
+	err_kibana := uploadFile(url, headers, paramName, path)
+	if err_kibana != nil {
+		log.Fatalf("Error uploading file in [ Kibana ]: %v", err_kibana)
 		os.Exit(1)
 
-		// fmt.Println("Error uploading file:", err2)
 	} else {
-		fmt.Println("File uploaded successfully to Kibana")
+		fmt.Println("File uploaded successfully to [ Kibana ]")
 	}
 
 	/*
 		Create Elasticsearch Connector
 	*/
 
-	// Define the URL
-	//! ORIGINAL
-	// urlz := "http://elastic:8083/connectors"
-
-	urlz := "http://kafka-connect:8083/connectors"
+	// Define the URL for creating the connector
+	url_connector := "http://kafka-connect:8083/connectors"
 
 	// Define the connector configuration
 	config := ConnectorConfig{
@@ -387,35 +382,29 @@ func main() {
 	}
 
 	// Create the connector
-	result, err := createConnector(urlz, config)
+	result, err := createConnector(url_connector, config)
 	if err != nil {
-
-		// log.Fatalf("Error creating connector: %v", err)
-
 		fmt.Println("Error creating connector:", err)
 	} else {
 		fmt.Println("Connector created successfully", result)
 	}
-	// Check status of Kafka Connector for Elastic
+	// Check status of Kafka Connector for Elastic Search
 	r, e := checkElasticConnectStatus()
 	if e != nil {
 
-		log.Fatalf("Error creating connector: %v", err)
+		log.Fatalf("Error creating the [ connector ]: %v", err)
 
-		// fmt.Println("Error creating connector:", e)
 	} else if r == "[]" {
-		fmt.Println("Connector created but not initialized", r)
+		fmt.Println("[ Connector ] created but not initialized", r)
 	} else {
-		fmt.Println("Connector initialized successfully", r)
+		fmt.Println("[ Connector ] initialized successfully", r)
 	}
 
 	numbPtr := flag.Int("limit", 1000000, "an int")
 	flag.Parse()
 	fmt.Println("Working with: ", *numbPtr)
 
-	time.Sleep(10 * time.Second)
+	time.Sleep(12 * time.Second)
 	generateTransactions(*numbPtr)
-	// ORIGIANL
-	// url := "http://localhost:5601/api/saved_objects/_import?createNewCopies=false"
-
+	fmt.Println("Generation complete. Ready for restart...")
 }
