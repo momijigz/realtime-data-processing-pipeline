@@ -1,0 +1,177 @@
+services:
+  kafka:
+    image: apache/kafka:3.9.0
+    container_name: kafka
+    restart: unless-stopped
+    ports:
+      - "9092:9092"
+    healthcheck:
+      test: [ "CMD", "bash", "-c", "/opt/kafka/bin/kafka-topics.sh --list --bootstrap-server localhost:9092 || exit 1" ]
+      interval: 5s
+      timeout: 60s
+      retries: 30
+    environment:
+      # Kafka KRaft (no ZooKeeper) — apache/kafka image uses KAFKA_* (not KAFKA_CFG_*)
+      CLUSTER_ID: 5L6g3nShT-eMCtK--X86sw
+      KAFKA_NODE_ID: 0
+      KAFKA_PROCESS_ROLES: controller,broker
+      KAFKA_CONTROLLER_QUORUM_VOTERS: 0@kafka:29093
+      KAFKA_CONTROLLER_LISTENER_NAMES: CONTROLLER
+
+      # Listeners & advertised listeners
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: PLAINTEXT:PLAINTEXT,CONTROLLER:PLAINTEXT,PLAINTEXT_HOST:PLAINTEXT
+      KAFKA_LISTENERS: PLAINTEXT://kafka:29092,CONTROLLER://kafka:29093,PLAINTEXT_HOST://0.0.0.0:9092
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka:29092,PLAINTEXT_HOST://localhost:9092
+      KAFKA_INTER_BROKER_LISTENER_NAME: PLAINTEXT
+
+      # Storage & logs
+      KAFKA_LOG_DIRS: /var/lib/kafka/data
+      KAFKA_LOG_RETENTION_HOURS: 168
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 1
+      KAFKA_NUM_PARTITIONS: 1
+
+      KAFKA_AUTO_CREATE_TOPICS_ENABLE: "true"
+
+    volumes:
+      - kafka_data:/var/lib/kafka/data
+
+  kafka-connect:
+    image: confluentinc/cp-kafka-connect:7.8.0
+    container_name: kafka-connect
+    ports:
+      - '8083:8083'
+    restart: "always"
+    depends_on:
+      - kafka
+      - elasticsearch
+    volumes:
+      - ./connect-plugins:/connect-plugins
+    environment:
+      CONNECT_BOOTSTRAP_SERVERS: kafka:29092
+      CONNECT_REST_PORT: 8083
+      CONNECT_GROUP_ID: 'connect'
+      CONNECT_CONFIG_STORAGE_TOPIC: connect-config
+      CONNECT_OFFSET_STORAGE_TOPIC: connect-offsets
+      CONNECT_STATUS_STORAGE_TOPIC: connect-status
+      CONNECT_REPLICATION_FACTOR: 1
+      CONNECT_CONFIG_STORAGE_REPLICATION_FACTOR: 1
+      CONNECT_OFFSET_STORAGE_REPLICATION_FACTOR: 1
+      CONNECT_STATUS_STORAGE_REPLICATION_FACTOR: 1
+      CONNECT_KEY_CONVERTER: 'org.apache.kafka.connect.storage.StringConverter'
+      CONNECT_KEY_CONVERTER_SCHEMAS_ENABLE: 'false'
+      CONNECT_VALUE_CONVERTER: 'org.apache.kafka.connect.json.JsonConverter'
+      CONNECT_VALUE_CONVERTER_SCHEMAS_ENABLE: 'false'
+      CONNECT_INTERNAL_KEY_CONVERTER: 'org.apache.kafka.connect.storage.StringConverter'
+      CONNECT_INTERNAL_VALUE_CONVERTER: 'org.apache.kafka.connect.json.JsonConverter'
+      CONNECT_PRODUCER_INTERCEPTOR_CLASSES: 'io.confluent.monitoring.clients.interceptor.MonitoringProducerInterceptor'
+      CONNECT_CONSUMER_INTERCEPTOR_CLASSES: 'io.confluent.monitoring.clients.interceptor.MonitoringConsumerInterceptor'
+      CONNECT_REST_ADVERTISED_HOST_NAME: 'connect'
+      CONNECT_PLUGIN_PATH: /connect-plugins
+      CONNECT_LOG4J_ROOT_LOGLEVEL: INFO
+      CONNECT_LOG4J_LOGGERS: org.reflections=ERROR
+      CLASSPATH: /usr/share/java/monitoring-interceptors/monitoring-interceptors-3.3.0.jar
+
+  elasticsearch:
+    container_name: elastic
+    image: docker.elastic.co/elasticsearch/elasticsearch:8.7.1
+    ports:
+      - '9200:9200'
+      - '9300:9300'
+    environment:
+      - xpack.security.enabled=false
+      - discovery.type=single-node
+      - bootstrap.memory_lock=true
+      - 'ES_JAVA_OPTS=-Xms512m -Xmx512m'
+      - cluster.routing.allocation.disk.threshold_enabled=false
+    ulimits:
+      memlock:
+        soft: -1
+        hard: -1
+
+  kibana:
+    container_name: kibana
+    image: docker.elastic.co/kibana/kibana:8.7.1
+    ports:
+      - '5601:5601'
+    depends_on:
+      - elasticsearch
+    environment:
+      SERVER_NAME: kibana.example.org
+      ELASTICSEARCH_HOSTS: '["http://elastic:9200"]'
+
+  logstash:
+    image: docker.elastic.co/logstash/logstash:8.15.5
+    container_name: logstash
+    volumes:
+      - ./logstash/pipeline:/usr/share/logstash/pipeline
+    ports:
+      - "5003:5003"
+      - "9600:9600"
+    depends_on:
+      - elasticsearch
+      - kibana
+    environment:
+      ELASTIC_HOSTS: '["http://elastic:9200"]'
+
+  kafka-ui-s:
+    container_name: kafka-ui
+    image: provectuslabs/kafka-ui:latest
+    ports:
+      - 8080:8080
+    environment:
+      KAFKA_CLUSTERS_0_NAME: local
+      KAFKA_CLUSTERS_0_BOOTSTRAP_SERVERS: kafka:29092
+
+  api:
+    build:
+      context: ..
+      dockerfile: cmd/api/Dockerfile
+    container_name: pipeline-api
+    ports:
+      - "8090:8090"
+    environment:
+      KAFKA_BROKERS: kafka:29092
+      KAFKA_TOPIC: transactions
+      KIBANA_URL: http://kibana:5601
+      CONNECT_URL: http://kafka-connect:8083
+      ES_URL: http://elastic:9200
+    depends_on:
+      - kafka
+      - kibana
+      - kafka-connect
+      - elasticsearch
+    restart: unless-stopped
+
+  ui:
+    build: ../ui
+    container_name: pipeline-ui
+    ports:
+      - "5173:5173"
+    # Vite dev server proxies /api/* to the api container over the compose network.
+    environment:
+      VITE_API_TARGET: http://api:8090
+    depends_on:
+      - api
+    restart: unless-stopped
+
+  generator:
+    build:
+      context: ..
+      dockerfile: cmd/generator/Dockerfile
+    container_name: pipeline-generator
+    # Manual-only CLI version of the generator. Does NOT autostart with
+    # `docker compose up` because the API now runs generation in-process,
+    # triggered from the UI. To run this for benchmarks/comparison:
+    #   docker compose -f deploy/docker-compose.yml --profile manual run --rm generator --limit 50000
+    profiles: ["manual"]
+    restart: on-failure
+    depends_on:
+      - kafka
+      - elasticsearch
+      - kafka-connect
+      - kibana
+
+volumes:
+  kafka_data:
